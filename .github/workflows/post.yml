@@ -1,0 +1,50 @@
+name: Post to TikTok
+
+on:
+  schedule:
+    # All times local (UTC+0). cron day: 0=Sun 1=Mon ... 6=Sat
+    - cron: '23 10 * * 1'   # Mon 10:23
+    - cron: '53 18 * * 1'   # Mon 18:53
+    - cron: '7 4 * * 2'     # Tue 04:07
+    - cron: '29 12 * * 2'   # Tue 12:29
+    - cron: '3 11 * * 3'    # Wed 11:03
+    - cron: '0 19 * * 3'    # Wed 19:00
+    - cron: '30 4 * * 4'    # Thu 04:30
+    - cron: '0 19 * * 4'    # Thu 19:00
+    - cron: '29 12 * * 5'   # Fri 12:29
+    - cron: '50 18 * * 5'   # Fri 18:50
+    - cron: '23 10 * * 6'   # Sat 10:23
+    - cron: '0 19 * * 6'    # Sat 19:00
+    - cron: '0 11 * * 0'    # Sun 11:00
+    - cron: '29 12 * * 0'   # Sun 12:29
+  workflow_dispatch: {}
+
+concurrency:
+  group: tiktok-posting
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install boto3 requests
+
+      - name: Post next video
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+          BUCKET: tt-videos
+          PRIVACY_LEVEL: SELF_ONLY
+        run: python worker.py
