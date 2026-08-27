@@ -83,11 +83,12 @@ def put_json(s3, bucket, key, data):
 # ---------------- tiktok auth ----------------
 
 def refresh_access_token(state):
+    cur = state.get('refresh_token') or os.environ['TIKTOK_REFRESH_TOKEN']
     resp = requests.post(f'{API}/oauth/token/', data={
         'grant_type': 'refresh_token',
         'client_key': os.environ['TIKTOK_CLIENT_KEY'],
         'client_secret': os.environ['TIKTOK_CLIENT_SECRET'],
-        'refresh_token': os.environ['TIKTOK_REFRESH_TOKEN'],
+        'refresh_token': cur,
     }, timeout=30)
     data = resp.json()
     token = data.get('access_token')
@@ -97,6 +98,10 @@ def refresh_access_token(state):
         'access_token': token,
         'expires_at': time.time() + int(data.get('expires_in', 7200)) - 600,
     }
+    new_rt = data.get('refresh_token')
+    if new_rt and new_rt != cur:
+        state['refresh_token'] = new_rt
+        log("Refresh token rotated (new value saved to bucket state)")
     log("Access token refreshed")
     return token
 
@@ -155,7 +160,8 @@ def init_direct_post(token, size, title, privacy_level):
     err = data.get('error', {})
     if err.get('code') != 'ok':
         raise RuntimeError(f"init failed HTTP {r.status_code}: {json.dumps(data)[:300]}")
-    return data['data']['publish_id']
+    d = data['data']
+    return d['publish_id'], d.get('upload_url')
 
 
 def upload_chunks(upload_url, path, size):
@@ -261,18 +267,11 @@ def main():
         title = build_title(next_video.get('caption', ''), next_video['order'])
         log(f"Title: {title[:80]}")
 
-        publish_id = init_direct_post(token, size, title, privacy)
+        publish_id, upload_url = init_direct_post(token, size, title, privacy)
         log(f"publish_id={publish_id}")
 
-        init_data = None
-        r = requests.post(f'{API}/post/publish/status/fetch/',
-                          headers={'Authorization': f'Bearer {get_token(post_state)}',
-                                   'Content-Type': 'application/json'},
-                          json={'publish_id': publish_id}, timeout=30)
-        upload_url = (r.json().get('data') or {}).get('upload_url')
-
         if not upload_url:
-            raise RuntimeError("No upload_url returned by TikTok")
+            raise RuntimeError("No upload_url returned by TikTok init")
 
         upload_chunks(upload_url, tmp_path, size)
         poll_status(get_token(post_state), publish_id)
